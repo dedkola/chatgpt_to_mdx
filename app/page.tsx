@@ -171,7 +171,7 @@ id: "${convo.id || ''}"
         <div className="bg-white rounded-lg shadow-lg p-8 mb-6">
           <h1 className="text-3xl font-bold text-gray-800 mb-2 flex items-center gap-3">
             <FileText className="text-indigo-600" />
-            ChatGPT to MDX Converter
+            ChatGPT logs in JSON convert to MDX files
           </h1>
           <p className="text-gray-600 mb-6">
             Upload your ChatGPT export JSON and convert conversations to MDX format
