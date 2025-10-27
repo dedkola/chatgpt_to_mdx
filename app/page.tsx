@@ -42,7 +42,8 @@ export default function ChatGPTToMDX() {
       setConversations(convos);
       setSelected(new Set());
     } catch (err) {
-      alert('Error parsing JSON file: ' + err.message);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      alert('Error parsing JSON file: ' + errorMessage);
     }
   };
 
