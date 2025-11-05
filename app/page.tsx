@@ -28,6 +28,7 @@ export default function ChatGPTToMDX() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState('');
+  const [format, setFormat] = useState<'mdx' | 'md'>('mdx');
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -98,13 +99,58 @@ id: "${convo.id || ''}"
     return mdx;
   };
 
-  const downloadMDX = (convo: Conversation) => {
-    const mdx = convertToMDX(convo);
-    const filename = `${convo.title || 'conversation'}.mdx`
-      .replace(/[^a-z0-9]/gi, '-')
-      .toLowerCase();
+  const convertToMD = (convo: Conversation) => {
+    const title = convo.title || 'Untitled Conversation';
+    const date = convo.create_time 
+      ? new Date(convo.create_time * 1000).toISOString()
+      : new Date().toISOString();
     
-    const blob = new Blob([mdx], { type: 'text/markdown' });
+    let md = `# ${title}\n\n`;
+    md += `**Date:** ${date}\n`;
+    md += `**ID:** ${convo.id || ''}\n\n`;
+    md += `---\n\n`;
+
+    // Handle mapping structure
+    const mapping = convo.mapping || {};
+    const nodes = Object.values(mapping || {}).filter((node): node is ConversationNode & { message: Message } => {
+      if (!node.message) return false;
+      if (!node.message.content) return false;
+      return Array.isArray(node.message.content.parts);
+    });
+
+    // Sort by create_time if available
+    nodes.sort((a, b) => {
+      const timeA = a.message?.create_time || 0;
+      const timeB = b.message?.create_time || 0;
+      return timeA - timeB;
+    });
+
+    nodes.forEach(node => {
+      if (!node.message) return;
+      const role = node.message.author?.role || 'unknown';
+      const parts = node.message.content.parts;
+      const text = parts.join('\n\n');
+
+      if (!text.trim()) return;
+
+      if (role === 'user') {
+        md += `## User\n\n${text}\n\n`;
+      } else if (role === 'assistant') {
+        md += `## Assistant\n\n${text}\n\n`;
+      } else if (role === 'system') {
+        md += `## System\n\n${text}\n\n`;
+      }
+    });
+
+    return md;
+  };
+
+  const downloadFile = (convo: Conversation) => {
+    const content = format === 'mdx' ? convertToMDX(convo) : convertToMD(convo);
+    const extension = format === 'mdx' ? 'mdx' : 'md';
+    const filename = `${(convo.title || 'conversation').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.${extension}`;
+    
+    const blob = new Blob([content], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -117,19 +163,18 @@ id: "${convo.id || ''}"
     if (selected.size === 0) return;
     
     const selectedConvos = conversations.filter(c => selected.has(c.id));
+    const extension = format === 'mdx' ? 'mdx' : 'md';
     
     if (selected.size === 1) {
-      downloadMDX(selectedConvos[0]);
+      downloadFile(selectedConvos[0]);
     } else {
-      // Create a zip file containing all selected MDX files
+      // Create a zip file containing all selected files
       const zip = new JSZip();
       
       selectedConvos.forEach((convo) => {
-        const mdx = convertToMDX(convo);
-        const filename = `${convo.title || 'conversation'}.mdx`
-          .replace(/[^a-z0-9]/gi, '-')
-          .toLowerCase();
-        zip.file(filename, mdx);
+        const content = format === 'mdx' ? convertToMDX(convo) : convertToMD(convo);
+        const filename = `${(convo.title || 'conversation').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.${extension}`;
+        zip.file(filename, content);
       });
       
       // Generate and download the zip file
@@ -171,11 +216,41 @@ id: "${convo.id || ''}"
         <div className="bg-white rounded-lg shadow-lg p-8 mb-6">
           <h1 className="text-3xl font-bold text-gray-800 mb-2 flex items-center gap-3">
             <FileText className="text-indigo-600" />
-            ChatGPT logs in JSON convert to MDX files
+            ChatGPT logs in JSON convert to MDX/MD files
           </h1>
           <p className="text-gray-600 mb-6">
-            Upload your ChatGPT export JSON and convert conversations to MDX format
+            Upload your ChatGPT export JSON and convert conversations to MDX or MD format
           </p>
+
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Output Format
+            </label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="format"
+                  value="mdx"
+                  checked={format === 'mdx'}
+                  onChange={(e) => setFormat(e.target.value as 'mdx' | 'md')}
+                  className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-gray-700">MDX (with frontmatter)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="format"
+                  value="md"
+                  checked={format === 'md'}
+                  onChange={(e) => setFormat(e.target.value as 'mdx' | 'md')}
+                  className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-gray-700">MD (standard markdown)</span>
+              </label>
+            </div>
+          </div>
 
           <label className="flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-lg cursor-pointer hover:bg-indigo-700 transition-colors">
             <Upload size={20} />
@@ -214,7 +289,7 @@ id: "${convo.id || ''}"
                   className="ml-4 flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                 >
                   <Download size={18} />
-                  Download {selected.size} MDX {selected.size === 1 ? 'file' : 'files'}
+                  Download {selected.size} {format.toUpperCase()} {selected.size === 1 ? 'file' : 'files'}
                 </button>
               )}
             </div>
@@ -257,7 +332,7 @@ id: "${convo.id || ''}"
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      downloadMDX(convo);
+                      downloadFile(convo);
                     }}
                     className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
                   >
